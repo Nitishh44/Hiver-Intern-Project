@@ -107,8 +107,17 @@ def classify_intent(customer_message):
         intent_embeddings,
     )[0]
 
+    # Rank all intents from highest to lowest similarity
+    ranked_indices = np.argsort(
+        similarities
+    )[::-1]
+
+    # --------------------------------------------------------
+    # TOP-1 INTENT
+    # --------------------------------------------------------
+
     best_index = int(
-        np.argmax(similarities)
+        ranked_indices[0]
     )
 
     predicted_intent = intent_names[
@@ -119,10 +128,38 @@ def classify_intent(customer_message):
         similarities[best_index]
     )
 
-    # Sort all intents for debugging / analysis
-    ranked_indices = np.argsort(
-        similarities
-    )[::-1]
+    # --------------------------------------------------------
+    # TOP-2 INTENT
+    # --------------------------------------------------------
+
+    second_index = int(
+        ranked_indices[1]
+    )
+
+    second_intent = intent_names[
+        second_index
+    ]
+
+    second_score = float(
+        similarities[second_index]
+    )
+
+    # --------------------------------------------------------
+    # INTENT MARGIN
+    # --------------------------------------------------------
+    # Difference between top-1 and top-2.
+    #
+    # Larger margin = clearer classification
+    # Smaller margin = more ambiguous classification
+    # --------------------------------------------------------
+
+    intent_margin = (
+        confidence - second_score
+    )
+
+    # --------------------------------------------------------
+    # RANKED INTENTS
+    # --------------------------------------------------------
 
     ranked_intents = []
 
@@ -139,6 +176,9 @@ def classify_intent(customer_message):
         predicted_intent,
         confidence,
         ranked_intents,
+        second_intent,
+        second_score,
+        intent_margin,
     )
 
 
@@ -148,7 +188,14 @@ def classify_intent(customer_message):
 
 def detect_intent_semantic(customer_message):
 
-    intent, confidence, _ = classify_intent(
+    (
+        intent,
+        confidence,
+        _,
+        _,
+        _,
+        _,
+    ) = classify_intent(
         customer_message
     )
 
@@ -165,7 +212,14 @@ if __name__ == "__main__":
         "\nEnter a customer message:\n> "
     )
 
-    intent, confidence, ranked = classify_intent(
+    (
+        intent,
+        confidence,
+        ranked,
+        second_intent,
+        second_score,
+        intent_margin,
+    ) = classify_intent(
         customer_message
     )
 
@@ -179,6 +233,18 @@ if __name__ == "__main__":
 
     print(
         f"Confidence       : {confidence:.4f}"
+    )
+
+    print(
+        f"Second intent    : {second_intent}"
+    )
+
+    print(
+        f"Second score     : {second_score:.4f}"
+    )
+
+    print(
+        f"Intent margin    : {intent_margin:.4f}"
     )
 
     print("\nTop intent candidates:")

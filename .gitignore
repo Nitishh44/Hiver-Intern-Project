@@ -4,6 +4,9 @@
 # Raw dataset
 data/raw/
 
+# Generated processed data / embeddings
+data/processed/
+
 # Python cache
 __pycache__/
 *.pyc

@@ -1,208 +1,139 @@
 import os
+import re
 
-import pandas as pd
 import numpy as np
-
+import pandas as pd
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
 DATA_PATH = "data/processed/apple_conversations.csv"
 EMBEDDINGS_PATH = "data/processed/apple_embeddings.npy"
-
 MODEL_NAME = "all-MiniLM-L6-v2"
 
 
-# ============================================================
-# LOAD DATA
-# ============================================================
-
 print("=" * 70)
-print("INTENT-AWARE SIMILAR-CASE RETRIEVAL")
+print("LOADING RETRIEVAL SYSTEM")
 print("=" * 70)
 
-df = pd.read_csv(
-    DATA_PATH
-)
+print("\nLoading conversation data...")
+df = pd.read_csv(DATA_PATH)
 
-df = df.dropna(
-    subset=[
-        "customer_text",
-        "support_text",
-    ]
-).copy()
+df = df.dropna(subset=["customer_text", "support_text"]).reset_index(drop=True)
 
-print(
-    f"Historical interactions: {len(df):,}"
-)
-
-
-# ============================================================
-# LOAD EMBEDDING MODEL
-# ============================================================
+print(f"Conversation pairs loaded: {len(df):,}")
 
 print("\nLoading embedding model...")
-
-model = SentenceTransformer(
-    MODEL_NAME
-)
-
-print(
-    "Embedding model loaded!"
-)
+model = SentenceTransformer(MODEL_NAME)
+print("Embedding model loaded!")
 
 
-# ============================================================
-# LOAD OR CREATE EMBEDDINGS
-# ============================================================
-
-if os.path.exists(
-    EMBEDDINGS_PATH
-):
-
-    print(
-        "\nLoading cached embeddings..."
-    )
-
-    embeddings = np.load(
-        EMBEDDINGS_PATH
-    )
-
-    print(
-        "Cached embeddings loaded!"
-    )
+if os.path.exists(EMBEDDINGS_PATH):
+    print("\nLoading cached embeddings...")
+    embeddings = np.load(EMBEDDINGS_PATH)
+    print(f"Embeddings loaded: {embeddings.shape}")
 
 else:
-
-    print(
-        "\nNo cached embeddings found."
-    )
-
-    print(
-        "Creating embeddings..."
-    )
-
+    print("\nCreating embeddings...")
     embeddings = model.encode(
         df["customer_text"].tolist(),
-        show_progress_bar=True,
-        batch_size=64,
         normalize_embeddings=True,
+        show_progress_bar=True,
     )
 
-    np.save(
-        EMBEDDINGS_PATH,
-        embeddings,
-    )
+    np.save(EMBEDDINGS_PATH, embeddings)
 
-    print(
-        "\nEmbeddings saved to:"
-    )
+    print(f"Embeddings saved: {embeddings.shape}")
 
-    print(
-        EMBEDDINGS_PATH
-    )
-
-
-print(
-    f"Embedding shape: {embeddings.shape}"
-)
-
-
-# ============================================================
-# INTENT-SPECIFIC RESPONSE RELEVANCE
-# ============================================================
 
 INTENT_TERMS = {
-
+    "software_update": [
+        "update",
+        "ios",
+        "upgrade",
+        "downgrade",
+        "software",
+        "version",
+    ],
     "battery_charging": [
         "battery",
         "charge",
         "charging",
         "charger",
+        "power",
+        "drain",
     ],
-
+    "app_issue": [
+        "app",
+        "application",
+        "crash",
+        "download",
+        "install",
+        "opening",
+    ],
+    "hardware_device": [
+        "screen",
+        "button",
+        "camera",
+        "speaker",
+        "keyboard",
+        "microphone",
+        "device",
+        "iphone",
+        "ipad",
+        "macbook",
+    ],
+    "account_access": [
+        "apple id",
+        "icloud",
+        "password",
+        "login",
+        "account",
+        "sign in",
+        "authentication",
+    ],
     "connectivity": [
         "wifi",
         "wi-fi",
         "bluetooth",
-        "lte",
         "cellular",
         "network",
         "internet",
+        "mobile data",
+        "connection",
     ],
-
-    "account_access": [
-        "icloud",
-        "apple id",
-        "password",
-        "login",
-        "sign in",
-        "account",
-    ],
-
-    "software_update": [
-        "ios",
-        "update",
-        "updated",
-        "upgrade",
-        "software",
-    ],
-
-    "app_issue": [
-        "app",
-        "apps",
-        "download",
-        "install",
-        "crash",
-    ],
-
-    "hardware_device": [
-        "screen",
-        "camera",
-        "speaker",
-        "button",
-        "keyboard",
-        "display",
-        "microphone",
-    ],
-
     "billing_payment": [
-        "payment",
+        "charge",
+        "charged",
         "billing",
         "refund",
-        "charged",
-        "credit card",
-        "card",
+        "payment",
+        "subscription",
+        "purchase",
+        "money",
     ],
-
     "order_purchase": [
         "order",
         "shipping",
         "delivery",
+        "delivered",
         "reservation",
         "purchase",
     ],
-
     "services_media": [
         "music",
         "itunes",
+        "apple tv",
         "podcast",
         "podcasts",
-        "apple tv",
         "media",
+        "playlist",
+        "song",
+        "video",
     ],
-
     "general_troubleshooting": [],
 }
 
-
-# ============================================================
-# BAD RESPONSE FILTER
-# ============================================================
 
 BAD_REPLY_TERMS = [
     "here's how to customize",
@@ -210,283 +141,294 @@ BAD_REPLY_TERMS = [
 ]
 
 
-# ============================================================
-# RETRIEVE SIMILAR CASES
-# ============================================================
+def normalize_text(text):
+    """
+    Normalize text for duplicate detection.
+    """
+    if pd.isna(text):
+        return ""
+
+    text = str(text).lower().strip()
+
+    text = re.sub(r"\s+", " ", text)
+
+    return text
+
+
+def clean_text(text):
+    """
+    Remove Twitter handles and URLs before keyword matching.
+    """
+    if pd.isna(text):
+        return ""
+
+    text = str(text)
+
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"@\w+", " ", text)
+
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip().lower()
+
+
+def response_relevance(customer_text, support_text, intent):
+    """
+    Lightweight heuristic to determine whether the historical
+    support response is relevant to the customer's problem.
+    """
+
+    customer_clean = clean_text(customer_text)
+    support_clean = clean_text(support_text)
+
+    if not support_clean:
+        return 0
+
+    # Reject known irrelevant/template responses.
+    for bad_term in BAD_REPLY_TERMS:
+        if bad_term in support_clean:
+            return 0
+
+    terms = INTENT_TERMS.get(intent, [])
+
+    if not terms:
+        return 1
+
+    customer_terms = set()
+
+    for term in terms:
+        if term in customer_clean:
+            customer_terms.add(term)
+
+    if not customer_terms:
+        return 1
+
+    matched = sum(
+        1
+        for term in customer_terms
+        if term in support_clean
+    )
+
+    return matched
+
 
 def retrieve_similar_cases(
     query,
     intent,
     top_k=3,
+    exclude_tweet_ids=None,
+    exclude_customer_texts=None,
 ):
+    """
+    Retrieve similar historical customer-support cases.
 
-    print(
-        f"\nRetrieval intent: {intent}"
-    )
+    During evaluation we exclude:
+    1. The exact evaluation tweet ID.
+    2. Exact duplicate customer messages.
 
-
-    # --------------------------------------------------------
-    # Create query embedding
-    # --------------------------------------------------------
+    This prevents evaluation leakage.
+    """
 
     query_embedding = model.encode(
         [query],
         normalize_embeddings=True,
     )
 
-
-    # --------------------------------------------------------
-    # Calculate semantic similarity
-    # --------------------------------------------------------
-
-    scores = cosine_similarity(
+    similarities = cosine_similarity(
         query_embedding,
         embeddings,
     )[0]
 
+    scores = similarities.copy()
 
-    # --------------------------------------------------------
-    # Retrieve larger candidate pool first
-    # --------------------------------------------------------
+    # ---------------------------------------------------------
+    # 1. Exclude specific tweet IDs
+    # ---------------------------------------------------------
 
-    candidate_count = min(
-        50,
-        len(df),
-    )
+    if exclude_tweet_ids:
 
-    top_indices = scores.argsort()[
-        -candidate_count:
-    ][::-1]
+        excluded_ids = {
+            str(tweet_id)
+            for tweet_id in exclude_tweet_ids
+        }
 
+        if "customer_tweet_id" in df.columns:
 
-    candidates = df.iloc[
-        top_indices
-    ].copy()
+            for index, tweet_id in enumerate(
+                df["customer_tweet_id"]
+            ):
+                if str(tweet_id) in excluded_ids:
+                    scores[index] = -1
 
+        if "support_tweet_id" in df.columns:
 
-    candidates["similarity"] = scores[
-        top_indices
+            for index, tweet_id in enumerate(
+                df["support_tweet_id"]
+            ):
+                if str(tweet_id) in excluded_ids:
+                    scores[index] = -1
+
+    # ---------------------------------------------------------
+    # 2. Exclude exact duplicate customer texts
+    # ---------------------------------------------------------
+
+    if exclude_customer_texts:
+
+        excluded_texts = {
+            normalize_text(text)
+            for text in exclude_customer_texts
+            if normalize_text(text)
+        }
+
+        for index, customer_text in enumerate(
+            df["customer_text"]
+        ):
+
+            normalized_customer_text = normalize_text(
+                customer_text
+            )
+
+            if normalized_customer_text in excluded_texts:
+                scores[index] = -1
+
+    # ---------------------------------------------------------
+    # 3. Get candidate pool
+    # ---------------------------------------------------------
+
+    candidate_indices = np.argsort(scores)[::-1]
+
+    candidate_indices = [
+        index
+        for index in candidate_indices
+        if scores[index] >= 0
     ]
 
+    # We inspect more candidates because some may fail
+    # intent/relevance filtering.
+    candidate_indices = candidate_indices[:50]
 
-    # --------------------------------------------------------
-    # Candidate intent filtering
-    #
-    # IMPORTANT:
-    # We use the same semantic intent taxonomy indirectly
-    # through lightweight text signals only for historical
-    # candidate filtering.
-    # --------------------------------------------------------
+    results = []
 
-    terms = INTENT_TERMS.get(
-        intent,
-        [],
-    )
+    # ---------------------------------------------------------
+    # 4. Intent-aware filtering
+    # ---------------------------------------------------------
 
+    terms = INTENT_TERMS.get(intent, [])
 
-    def candidate_matches_intent(text):
+    query_clean = clean_text(query)
 
-        text = str(text).lower()
+    for index in candidate_indices:
 
-        if not terms:
-            return True
+        row = df.iloc[index]
 
-        return any(
-            term in text
-            for term in terms
-        )
+        customer_text = str(row["customer_text"])
+        support_text = str(row["support_text"])
 
+        customer_clean = clean_text(customer_text)
 
-    candidates[
-        "candidate_matches_intent"
-    ] = candidates[
-        "customer_text"
-    ].apply(
-        candidate_matches_intent
-    )
+        # -----------------------------------------------------
+        # Intent filtering
+        # -----------------------------------------------------
 
+        if terms:
 
-    matching = candidates[
-        candidates[
-            "candidate_matches_intent"
-        ]
-    ].copy()
-
-
-    # --------------------------------------------------------
-    # Response quality filtering
-    # --------------------------------------------------------
-
-    matching["support_lower"] = (
-        matching["support_text"]
-        .fillna("")
-        .str.lower()
-    )
-
-
-    for term in BAD_REPLY_TERMS:
-
-        matching = matching[
-            ~matching[
-                "support_lower"
-            ].str.contains(
-                term,
-                regex=False,
-                na=False,
+            has_intent_signal = any(
+                term in customer_clean
+                for term in terms
             )
-        ]
 
+            if not has_intent_signal:
 
-    # --------------------------------------------------------
-    # Response relevance
-    # --------------------------------------------------------
+                # Semantic similarity can still rescue a case
+                # if it is extremely close.
+                if scores[index] < 0.70:
+                    continue
 
-    def response_relevance(
-        text
-    ):
+        # -----------------------------------------------------
+        # Response quality filtering
+        # -----------------------------------------------------
 
-        text = str(text).lower()
-
-        return sum(
-            term in text
-            for term in terms
+        relevance = response_relevance(
+            customer_text,
+            support_text,
+            intent,
         )
 
+        if relevance == 0:
+            continue
 
-    matching[
-        "response_relevance"
-    ] = matching[
-        "support_text"
-    ].apply(
-        response_relevance
-    )
-
-
-    # --------------------------------------------------------
-    # Final ranking
-    # --------------------------------------------------------
-
-    matching = matching.sort_values(
-        by=[
-            "response_relevance",
-            "similarity",
-        ],
-        ascending=[
-            False,
-            False,
-        ],
-    )
-
-
-    # --------------------------------------------------------
-    # Return only genuinely matching cases
-    # --------------------------------------------------------
-
-    if len(matching) == 0:
-
-        print(
-            "No intent-matching historical cases found."
+        results.append(
+            {
+                "customer_text": customer_text,
+                "support_text": support_text,
+                "customer_tweet_id": row.get(
+                    "customer_tweet_id",
+                    None,
+                ),
+                "support_tweet_id": row.get(
+                    "support_tweet_id",
+                    None,
+                ),
+                "similarity": float(scores[index]),
+                "response_relevance": relevance,
+            }
         )
 
-        return matching
+    # ---------------------------------------------------------
+    # 5. Ranking
+    # ---------------------------------------------------------
 
+    results.sort(
+        key=lambda item: (
+            item["response_relevance"],
+            item["similarity"],
+        ),
+        reverse=True,
+    )
 
-    results = matching.head(
-        top_k
-    ).copy()
+    return results[:top_k]
 
-
-    return results
-
-
-# ============================================================
-# MANUAL TEST
-# ============================================================
 
 if __name__ == "__main__":
 
-    query = input(
-        "\nEnter a customer message:\n> "
+    test_query = (
+        "My iPhone battery is draining very quickly "
+        "after the latest iOS update"
     )
 
+    test_intent = "battery_charging"
 
-    # Temporary manual intent for testing retrieval.
-    # The real agent will pass the semantic classifier's
-    # predicted intent automatically.
+    print("\n" + "=" * 70)
+    print("RETRIEVAL TEST")
+    print("=" * 70)
 
-    intent = input(
-        "\nEnter detected intent:\n> "
-    )
-
-
-    results = retrieve_similar_cases(
-        query,
-        intent,
+    cases = retrieve_similar_cases(
+        test_query,
+        test_intent,
         top_k=3,
     )
 
+    for i, case in enumerate(cases, start=1):
 
-    # --------------------------------------------------------
-    # Display results
-    # --------------------------------------------------------
-
-    print(
-        "\n" + "=" * 70
-    )
-
-    print(
-        "TOP RELEVANT SUPPORT CASES"
-    )
-
-    print(
-        "=" * 70
-    )
-
-
-    if results.empty:
+        print(f"\nCASE {i}")
+        print("-" * 70)
 
         print(
-            "\nNo relevant support cases found."
+            f"Similarity: "
+            f"{case['similarity']:.4f}"
         )
 
+        print(
+            f"Response relevance: "
+            f"{case['response_relevance']}"
+        )
 
-    else:
+        print(
+            f"\nCustomer:\n"
+            f"{case['customer_text']}"
+        )
 
-        for i, (_, row) in enumerate(
-            results.iterrows(),
-            start=1,
-        ):
-
-            print(
-                f"\nCASE {i}"
-            )
-
-            print(
-                "-" * 70
-            )
-
-            print(
-                f"Similarity        : "
-                f"{row['similarity']:.4f}"
-            )
-
-            print(
-                f"Response relevance: "
-                f"{row['response_relevance']}"
-            )
-
-            print(
-                "\nCUSTOMER:"
-            )
-
-            print(
-                row["customer_text"]
-            )
-
-            print(
-                "\nAPPLE SUPPORT:"
-            )
-
-            print(
-                row["support_text"]
-            )
+        print(
+            f"\nSupport:\n"
+            f"{case['support_text']}"
+        )

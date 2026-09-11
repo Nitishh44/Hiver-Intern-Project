@@ -2,7 +2,6 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -11,24 +10,30 @@ from sklearn.metrics import (
 
 
 # ============================================================
-# PROJECT PATH
+# PROJECT PATHS
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 SRC_DIR = PROJECT_ROOT / "src"
 
-sys.path.insert(0, str(SRC_DIR))
+sys.path.insert(
+    0,
+    str(SRC_DIR),
+)
 
 
 # ============================================================
-# IMPORT SEMANTIC CLASSIFIER
+# IMPORT CLASSIFIER
 # ============================================================
 
-from semantic_intent_classifier import classify_intent
+from semantic_intent_classifier import (
+    classify_intent,
+)
 
 
 # ============================================================
-# PATHS
+# DATA PATH
 # ============================================================
 
 GOLDEN_PATH = (
@@ -39,51 +44,76 @@ GOLDEN_PATH = (
 )
 
 
-OUTPUT_PATH = (
-    PROJECT_ROOT
-    / "data"
-    / "golden"
-    / "semantic_predictions.csv"
-)
-
-
 # ============================================================
 # LOAD GOLDEN SET
 # ============================================================
-
-print("=" * 70)
-print("SEMANTIC INTENT CLASSIFIER EVALUATION")
-print("=" * 70)
 
 golden = pd.read_csv(
     GOLDEN_PATH
 )
 
+print("=" * 70)
+print("SEMANTIC INTENT CLASSIFIER EVALUATION")
+print("=" * 70)
+
 print(
     f"\nGolden examples: {len(golden)}"
 )
 
+print(
+    "Golden set loaded successfully."
+)
+
 
 # ============================================================
-# RUN PREDICTIONS
+# PREDICTIONS
 # ============================================================
-
-print("\nRunning semantic predictions...")
 
 predictions = []
 confidences = []
+second_intents = []
+second_scores = []
+intent_margins = []
+
+
+print("\nRunning semantic predictions...")
+
 
 for i, text in enumerate(
     golden["customer_text"],
     start=1,
 ):
 
-    intent, confidence, _ = classify_intent(
+    (
+        intent,
+        confidence,
+        ranked_intents,
+        second_intent,
+        second_score,
+        intent_margin,
+    ) = classify_intent(
         text
     )
 
-    predictions.append(intent)
-    confidences.append(confidence)
+    predictions.append(
+        intent
+    )
+
+    confidences.append(
+        confidence
+    )
+
+    second_intents.append(
+        second_intent
+    )
+
+    second_scores.append(
+        second_score
+    )
+
+    intent_margins.append(
+        intent_margin
+    )
 
     if i % 25 == 0:
         print(
@@ -92,11 +122,27 @@ for i, text in enumerate(
 
 
 # ============================================================
-# EVALUATION
+# ADD RESULTS
+# ============================================================
+
+golden["predicted_intent"] = predictions
+
+golden["confidence"] = confidences
+
+golden["second_intent"] = second_intents
+
+golden["second_score"] = second_scores
+
+golden["intent_margin"] = intent_margins
+
+
+# ============================================================
+# METRICS
 # ============================================================
 
 y_true = golden["intent"]
-y_pred = predictions
+
+y_pred = golden["predicted_intent"]
 
 
 accuracy = accuracy_score(
@@ -114,19 +160,20 @@ macro_f1 = f1_score(
 
 
 # ============================================================
-# RESULTS
+# FINAL RESULTS
 # ============================================================
 
-print("\n" + "=" * 70)
-print("SEMANTIC CLASSIFIER RESULTS")
+print("\n")
+print("=" * 70)
+print("FINAL RESULTS")
 print("=" * 70)
 
 print(
-    f"\nAccuracy : {accuracy:.4f}"
+    f"\nAccuracy  : {accuracy * 100:.2f}%"
 )
 
 print(
-    f"Macro-F1 : {macro_f1:.4f}"
+    f"Macro-F1  : {macro_f1 * 100:.2f}%"
 )
 
 
@@ -134,9 +181,7 @@ print(
 # CLASSIFICATION REPORT
 # ============================================================
 
-print("\n" + "=" * 70)
-print("CLASSIFICATION REPORT")
-print("=" * 70)
+print("\nClassification Report:")
 
 print(
     classification_report(
@@ -148,16 +193,55 @@ print(
 
 
 # ============================================================
-# SAVE PREDICTIONS
+# CONFIDENCE / MARGIN SUMMARY
 # ============================================================
 
-golden["predicted_intent"] = predictions
-golden["confidence"] = confidences
+print("=" * 70)
+print("CONFIDENCE / MARGIN SUMMARY")
+print("=" * 70)
+
+print(
+    f"\nAverage confidence : "
+    f"{golden['confidence'].mean():.4f}"
+)
+
+print(
+    f"Average margin     : "
+    f"{golden['intent_margin'].mean():.4f}"
+)
+
+print(
+    f"Minimum margin     : "
+    f"{golden['intent_margin'].min():.4f}"
+)
+
+print(
+    f"Maximum margin     : "
+    f"{golden['intent_margin'].max():.4f}"
+)
+
+
+# ============================================================
+# SAVE RESULTS
+# ============================================================
+
+OUTPUT_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "golden"
+    / "intent_evaluation.csv"
+)
 
 golden.to_csv(
     OUTPUT_PATH,
     index=False,
 )
 
-print("\nPredictions saved to:")
-print(OUTPUT_PATH)
+
+print("\nEvaluation saved to:")
+
+print(
+    OUTPUT_PATH
+)
+
+print("\nDone.")
