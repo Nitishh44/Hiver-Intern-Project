@@ -1,4 +1,4 @@
-# Hiver SDE Intern — AI Customer Support Agent
+﻿# Hiver SDE Intern - AI Customer Support Agent
 
 An AI-powered customer support agent built using the Customer Support on Twitter dataset.
 
