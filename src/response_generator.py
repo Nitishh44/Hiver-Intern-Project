@@ -1,11 +1,20 @@
 import re
 
-from retrieval import retrieve_similar_cases
-from semantic_intent_classifier import classify_intent
+
+# ============================================================
+# IMPORTS
+# ============================================================
+
+try:
+    from .retrieval import retrieve_similar_cases
+    from .semantic_intent_classifier import classify_intent
+except ImportError:
+    from retrieval import retrieve_similar_cases
+    from semantic_intent_classifier import classify_intent
 
 
 # ============================================================
-# GROUNDED RESPONSE GENERATOR
+# CLEAN SUPPORT TEXT
 # ============================================================
 
 def clean_support_text(text):
@@ -40,7 +49,7 @@ def clean_support_text(text):
 
 
 # ============================================================
-# RESPONSE TEMPLATES
+# GROUNDED RESPONSE GENERATOR
 # ============================================================
 
 def generate_grounded_response(
@@ -72,11 +81,19 @@ def generate_grounded_response(
     best_case = retrieved_cases[0]
 
     historical_response = clean_support_text(
-        best_case["support_text"]
+        best_case.get(
+            "support_text",
+            "",
+        )
     )
 
+    # Keep the historical response available as grounding
+    # evidence, but do not copy it directly.
+    _ = historical_response
+
+
     # --------------------------------------------------------
-    # Intent-specific grounded responses
+    # Battery / charging
     # --------------------------------------------------------
 
     if intent == "battery_charging":
@@ -88,6 +105,11 @@ def generate_grounded_response(
             "your iPhone so we can look into it further."
         )
 
+
+    # --------------------------------------------------------
+    # Connectivity
+    # --------------------------------------------------------
+
     if intent == "connectivity":
 
         return (
@@ -96,6 +118,11 @@ def generate_grounded_response(
             "Please send us a DM with more details so we can "
             "troubleshoot the issue further."
         )
+
+
+    # --------------------------------------------------------
+    # App issue
+    # --------------------------------------------------------
 
     if intent == "app_issue":
 
@@ -106,6 +133,11 @@ def generate_grounded_response(
             "look into it further."
         )
 
+
+    # --------------------------------------------------------
+    # Hardware
+    # --------------------------------------------------------
+
     if intent == "hardware_device":
 
         return (
@@ -114,6 +146,11 @@ def generate_grounded_response(
             "with you. Please send us a DM with more details "
             "so we can troubleshoot the issue."
         )
+
+
+    # --------------------------------------------------------
+    # Software update
+    # --------------------------------------------------------
 
     if intent == "software_update":
 
@@ -124,6 +161,11 @@ def generate_grounded_response(
             "more details so we can troubleshoot further."
         )
 
+
+    # --------------------------------------------------------
+    # Services / media
+    # --------------------------------------------------------
+
     if intent == "services_media":
 
         return (
@@ -132,6 +174,11 @@ def generate_grounded_response(
             "you. Please send us a DM with more details so "
             "we can troubleshoot the issue."
         )
+
+
+    # --------------------------------------------------------
+    # Account access
+    # --------------------------------------------------------
 
     if intent == "account_access":
 
@@ -142,6 +189,11 @@ def generate_grounded_response(
             "into the issue with you."
         )
 
+
+    # --------------------------------------------------------
+    # Billing / payment
+    # --------------------------------------------------------
+
     if intent == "billing_payment":
 
         return (
@@ -151,6 +203,11 @@ def generate_grounded_response(
             "look into this with you."
         )
 
+
+    # --------------------------------------------------------
+    # Order / purchase
+    # --------------------------------------------------------
+
     if intent == "order_purchase":
 
         return (
@@ -159,6 +216,7 @@ def generate_grounded_response(
             "so our support team can look into the issue "
             "with you."
         )
+
 
     # --------------------------------------------------------
     # General troubleshooting
@@ -190,7 +248,7 @@ def escalation_decision(
     - Sensitive intents -> human
     - No historical evidence -> human
     - Low intent confidence -> human
-    - Ambiguous intent -> human
+    - Low top-1 vs top-2 margin -> human
     - Strong historical similarity -> auto-handle
     - Otherwise -> human
     """
@@ -213,8 +271,9 @@ def escalation_decision(
             "or order information.",
         )
 
+
     # --------------------------------------------------------
-    # No evidence available
+    # No historical evidence
     # --------------------------------------------------------
 
     if not retrieved_cases:
@@ -224,13 +283,6 @@ def escalation_decision(
             "No relevant historical support cases found.",
         )
 
-    # --------------------------------------------------------
-    # Top retrieval similarity
-    # --------------------------------------------------------
-
-    top_similarity = float(
-        retrieved_cases[0]["similarity"]
-    )
 
     # --------------------------------------------------------
     # Low semantic intent confidence
@@ -243,6 +295,7 @@ def escalation_decision(
             "Intent classification confidence is low.",
         )
 
+
     # --------------------------------------------------------
     # Ambiguous intent
     # --------------------------------------------------------
@@ -251,9 +304,19 @@ def escalation_decision(
 
         return (
             "ESCALATE_TO_HUMAN",
-            "Top intents are too close, making the "
+            "Top intents are too close, making "
             "classification ambiguous.",
         )
+
+
+    # --------------------------------------------------------
+    # Top retrieval similarity
+    # --------------------------------------------------------
+
+    top_similarity = float(
+        retrieved_cases[0]["similarity"]
+    )
+
 
     # --------------------------------------------------------
     # Strong historical evidence
@@ -267,6 +330,7 @@ def escalation_decision(
             "strong similarity with relevant historical "
             "support cases.",
         )
+
 
     # --------------------------------------------------------
     # Default escalation
@@ -293,13 +357,13 @@ def run_support_agent(
 
     Pipeline:
         Customer message
-            ↓
+            ->
         Intent classification
-            ↓
+            ->
         Similar-case retrieval
-            ↓
+            ->
         Grounded response
-            ↓
+            ->
         Auto-handle / escalation decision
     """
 
@@ -318,6 +382,7 @@ def run_support_agent(
         customer_message
     )
 
+
     # --------------------------------------------------------
     # 2. Intent-aware retrieval
     # --------------------------------------------------------
@@ -330,6 +395,7 @@ def run_support_agent(
         exclude_customer_texts=exclude_customer_texts,
     )
 
+
     # --------------------------------------------------------
     # 3. Grounded response generation
     # --------------------------------------------------------
@@ -339,6 +405,7 @@ def run_support_agent(
         intent,
         retrieved_cases,
     )
+
 
     # --------------------------------------------------------
     # 4. Escalation decision
@@ -350,6 +417,7 @@ def run_support_agent(
         intent_margin,
         retrieved_cases,
     )
+
 
     # --------------------------------------------------------
     # 5. Return complete result
@@ -379,45 +447,66 @@ if __name__ == "__main__":
         "\nEnter a customer message:\n> "
     )
 
+
     result = run_support_agent(
         customer_message
     )
+
 
     # ========================================================
     # DISPLAY RESULT
     # ========================================================
 
     print("\n" + "=" * 70)
-    print("AI SUPPORT AGENT RESULT")
+
+    print(
+        "AI SUPPORT AGENT RESULT"
+    )
+
     print("=" * 70)
 
-    print(
-        f"\nIntent          : {result['intent']}"
-    )
 
     print(
-        f"Confidence      : {result['confidence']:.4f}"
+        f"\nIntent          : "
+        f"{result['intent']}"
     )
 
-    print(
-        f"Second intent   : {result['second_intent']}"
-    )
 
     print(
-        f"Second score    : {result['second_score']:.4f}"
+        f"Confidence      : "
+        f"{result['confidence']:.4f}"
     )
 
-    print(
-        f"Intent margin   : {result['intent_margin']:.4f}"
-    )
 
     print(
-        f"Decision        : {result['decision']}"
+        f"Second intent   : "
+        f"{result['second_intent']}"
     )
 
+
     print(
-        f"Reason          : {result['reason']}"
+        f"Second score    : "
+        f"{result['second_score']:.4f}"
     )
+
+
+    print(
+        f"Intent margin   : "
+        f"{result['intent_margin']:.4f}"
+    )
+
+
+    print(
+        f"Decision        : "
+        f"{result['decision']}"
+    )
+
+
+    print(
+        f"Reason          : "
+        f"{result['reason']}"
+    )
+
 
     # ========================================================
     # AI RESPONSE
@@ -430,13 +519,19 @@ if __name__ == "__main__":
         result["response"]
     )
 
+
     # ========================================================
     # REFERENCE CASES
     # ========================================================
 
     print("\n" + "=" * 70)
-    print("REFERENCE CASES")
+
+    print(
+        "REFERENCE CASES"
+    )
+
     print("=" * 70)
+
 
     for i, row in enumerate(
         result["retrieved_cases"],
