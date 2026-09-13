@@ -7,9 +7,16 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-DATA_PATH = "data/processed/apple_conversations.csv"
-EMBEDDINGS_PATH = "data/processed/apple_embeddings.npy"
 MODEL_NAME = "all-MiniLM-L6-v2"
+
+INDEX_MODE = os.getenv("SUPPORT_AGENT_INDEX", "full")
+
+if INDEX_MODE == "demo":
+    DATA_PATH = "data/processed/demo/apple_demo_conversations.csv"
+    EMBEDDINGS_PATH = "data/processed/demo/apple_demo_embeddings.npy"
+else:
+    DATA_PATH = "data/processed/apple_conversations.csv"
+    EMBEDDINGS_PATH = "data/processed/apple_embeddings.npy"
 
 
 print("=" * 70)

@@ -1,4 +1,6 @@
+import os
 import streamlit as st
+os.environ["SUPPORT_AGENT_INDEX"] = "demo"
 
 from src.response_generator import run_support_agent
 
